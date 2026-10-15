@@ -4,3 +4,5 @@ In short, the BoS(x) is computed based on the nearest neighbors (nn) of x. For k
 1) The initial variant is named _pipeline_initial_ and requires data points and the specification of the number of k-nn.
 2) The second variant defined as _pipeline_adjusted_ requires the data points, k-nn and the arbitrary threshold _prop_thresh_ deciding when to recompute the BoS to account for concavity situations. 
 3) The third variant defined as _pipeline_oriented_ requires the data points, k-nn and the arbitrary tolerance of the orientation of the maximum angle toward the barycenter of the point cloud.
+
+AI-Use Disclosure: GPT-5.5 Medium Thinking was used solely for code syntax checks and repairment. The logic behind the algorithm and every line has been 'humanly' elaborated. 
