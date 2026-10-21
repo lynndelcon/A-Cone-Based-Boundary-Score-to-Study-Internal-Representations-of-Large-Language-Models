@@ -17,6 +17,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Dict, List, Tuple, Optional
 
+from more_itertools import argmax
 import numpy as np
 from sklearn.neighbors import NearestNeighbors
 
@@ -146,22 +147,25 @@ def check_sums(data, denom):
     return prop
 
 def check_pre_concavity(
-    data: List[Tuple[float, Tuple[int, int]]],
+    angles_int: List[Tuple[float, Tuple[int, int]]],
     denom: int,
     tol: float = 1e-4,
+    prop_thresh: float=0.7,
 ) -> Tuple[float, List[Tuple[float, int, int]]]:
     """
-    data: list of (angle_deg, (i,j))
+    angles_int: list of (angle_deg, (i,j))
     denom: typically len(vectors)-2 (since you consider j != 0,1)
 
     Returns:
       prop: proportion of j where values[(0,j)] + values[(1,j)] <= ref + tol
-      min_ext_int: list of (min_angle, min_idx, j) for extreme cases (same spirit)
+      min_ext_int: list of (min_angle, min_idx, j) with j=v_1 or v_2.
     """
-    values = {(int(i), int(j)): float(val) for val, (i, j) in data}
+    values = {(int(i), int(j)): float(val) for val, (i, j) in angles_int}
 
     if (0, 1) not in values:
         raise ValueError("Reference pair (0,1) missing in angles_int.")
+
+    #values[(0, 1)] is the angle between the two basis vectors (0 and 1), it is given in the bde_pipeline before this function
 
     ref = values[(0, 1)] + tol
 
@@ -179,13 +183,13 @@ def check_pre_concavity(
     if denom <= 0:
         raise ValueError(f"Invalid denom={denom}. Expected len(vectors)-2 >= 1.")
 
-    booleen = [1 for val, _ in result if val <= ref]
+    booleen = [1 for val, _ in result if val <= ref]#because of numeric approx of the angle values.
     prop = np.count_nonzero(booleen) / float(denom)
 
     min_ext_int: List[Tuple[float, int, int]] = []
 
     # Extreme cases preserved from your original idea
-    if prop >= 0.7 and prop != 1.0:
+    if prop >= prop_thresh and prop != 1.0:
         for s, j in result:
             if s > ref:
                 if (0, j) in values and (1, j) in values:
@@ -194,13 +198,13 @@ def check_pre_concavity(
                     min_idx = int(np.argmin(vec_r))  # 0 or 1
                     min_ext_int.append((min_val, min_idx, j))
 
-    if prop <= 0.3 and prop != 0.0:
+    if prop <= 1 - prop_thresh and prop != 0.0:
         for s, j in result:
             if s <= ref:
                 if (0, j) in values and (1, j) in values:
                     vec_r = [values[(0, j)], values[(1, j)]]
                     min_val = min(vec_r)
-                    min_idx = int(np.argmin(vec_r))
+                    min_idx = int(np.argmin(vec_r))# 0 or 1
                     min_ext_int.append((min_val, min_idx, j))
 
     return prop, min_ext_int
@@ -210,157 +214,49 @@ def check_concavity(
     prop: float,
     prop_thresh: float, #high prop threshold (e.g., boundary score >= 0.7)
     max_angle: float,
-    item: List[Tuple[float, int, int]], #min_ext_int from check_pre_concavity function
+    item: List[Tuple[float, int, int]], #min_ext_int from check_pre_concavity function (min_angle, min_idx,j)
     angular_gap: float = 90,
 ) -> Tuple[bool, Dict]:
     """
     item: list of (value, label, stack_index)
-    Concavity defined asproportion = 0. Convexity defined as prop = 1. 
-    Specific rule for exactly labels {0,1}:
-    - prop >= prop_thresh:
-        new_angle = max_angle + max(label0) + max(label1) -> Prop of 1 for a >180 degrees angle
-        => new_angle = 360 - max_angle + max(label0) + max(label1) -> Prop of 0 for a <180 degrees angle
-    - prop <= 1 - prop_thresh:
-        new_angle = max_angle - max(label0) - max(label1) -> Prop of 0 for <180 degrees angle
-
-    Otherwise:
-    - single item: +/- value
-    - single label: +/- max(label)
-    - intermediate prop: return False
+    #adjusted angle and adjusted_prop computed in the gram-schmidt basis.
+    #Spliting the list by vector label (0 ro 1).
     """
+    Index_0 = None
+    Index_1 = None
+    j_0_max = None
+    j_1_max = None
+    alpha_0 = []
+    j_0 = []
+    alpha_1= []
+    j_1 = []
+    for val, idx, j in item:
+        if idx == 0:
+            alpha_0.append(val)
+            j_0.append(j)
+        if idx == 1:
+            alpha_1.append(val)
+            j_1.append(j)    
 
-    def _group_values(it):
-        values_by_label = defaultdict(list)
-        for v, lab, stack_idx in it:
-            values_by_label[int(lab)].append(
-                {"value": float(v), "stack_index": int(stack_idx)}
-            )
-        return values_by_label
+    angle_0 = max(alpha_0) if alpha_0 else 0.0
+    angle_1 = max(alpha_1) if alpha_1 else 0.0
 
-    def _compute_with_two_labels(base_angle, values_by_label, mode):
-        vals_0 = values_by_label.get(0, [])
-        vals_1 = values_by_label.get(1, [])
-        selected_0 = max(vals_0, key=lambda item_: item_["value"]) if vals_0 else None
-        selected_1 = max(vals_1, key=lambda item_: item_["value"]) if vals_1 else None
-        max_l0 = selected_0["value"] if selected_0 else 0.0
-        max_l1 = selected_1["value"] if selected_1 else 0.0
+    
 
-        if mode == "plus":
-            new_angle = base_angle + max_l0 + max_l1
-        else:
-            new_angle = base_angle - max_l0 - max_l1
-
-        selected_adjustments = []
-        if selected_0 is not None:
-            selected_adjustments.append({"label": 0, **selected_0})
-        if selected_1 is not None:
-            selected_adjustments.append({"label": 1, **selected_1})
-
-        return new_angle, {
-            "label_0_values": [candidate["value"] for candidate in vals_0],
-            "label_1_values": [candidate["value"] for candidate in vals_1],
-            "max_label_0": max_l0,
-            "max_label_1": max_l1,
-            "selected_adjustments": selected_adjustments,
-        }
-
-    # ---- prop high
     if prop >= prop_thresh and prop != 1.0:
-        if not item:
-            return False, {"case": "empty"}
+        if max_angle + angle_0 + angle_1 >= 180:
+            gap = 360 - (max_angle + angle_0 + angle_1)
+            return gap > angular_gap, {"prop_in_gap":0.0,"gap": gap}#hard-coded adj prop because in the gram-scmidt basis.
+        if max_angle + angle_0 + angle_1 < 180:
+            gap = max_angle + angle_0 + angle_1
+            return gap > angular_gap, {"prop_in_gap":1.0,"gap": gap}
+        #all gaps, ie., adjusted angles are < 180 degrees.
 
-        values_by_label = _group_values(item)
-        labels = list(values_by_label.keys())
-        m = len(item)
-
-        if m == 1:
-            v, lab, stack_idx = item[0]
-            new_angle = max_angle + float(v)
-            return new_angle <= 360 - angular_gap, {
-                "case": "single",
-                "value": float(v),
-                "label": int(lab),
-                "stack_index": int(stack_idx),
-                "selected_adjustments": [
-                    {"value": float(v), "label": int(lab), "stack_index": int(stack_idx)}
-                ],
-                "new_angle": 360 - new_angle,
-            }
-
-        if len(labels) == 1:
-            only_label = labels[0]
-            selected = max(values_by_label[only_label], key=lambda item_: item_["value"])
-            mx = selected["value"]
-            new_angle = max_angle + mx
-            return new_angle <= 360 - angular_gap, {
-                "case": "multi_same_label",
-                "label": only_label,
-                "max": mx,
-                "stack_index": selected["stack_index"],
-                "selected_adjustments": [{"label": int(only_label), **selected}],
-                "n": m,
-                "new_angle":360- new_angle,
-            }
-
-        if set(labels).issubset({0, 1}) and len(labels) == 2:
-            new_angle, stats = _compute_with_two_labels(max_angle, values_by_label, mode="plus")
-            return new_angle <= 360 - angular_gap, {
-                "case": "two_labels_0_1_plus",
-                "labels": labels,
-                "n": m,
-                "new_angle": 360-new_angle,
-                **stats,
-            }
-
-    # ---- prop low -> new_prop should be 0.0 with check sums
     if prop <= 1 - prop_thresh and prop != 0.0:
-        if not item:
-            return False, {"case": "empty"}
+        gap = max_angle - angle_0 - angle_1
+        return gap > angular_gap, {"prop_in_gap":0.0,"gap": gap}
 
-        values_by_label = _group_values(item)
-        labels = list(values_by_label.keys())
-        m = len(item)
-
-        if m == 1:
-            v, lab, stack_idx = item[0]
-            new_angle = max_angle - float(v)
-            return new_angle >= angular_gap, {
-                "case": "single",
-                "value": float(v),
-                "label": int(lab),
-                "stack_index": int(stack_idx),
-                "selected_adjustments": [
-                    {"value": float(v), "label": int(lab), "stack_index": int(stack_idx)}
-                ],
-                "new_angle": new_angle,
-            }
-
-        if len(labels) == 1:
-            only_label = labels[0]
-            selected = max(values_by_label[only_label], key=lambda item_: item_["value"])
-            mx = selected["value"]
-            new_angle = max_angle - mx
-            return new_angle >= angular_gap, {
-                "case": "multi_same_label",
-                "label": only_label,
-                "max": mx,
-                "stack_index": selected["stack_index"],
-                "selected_adjustments": [{"label": int(only_label), **selected}],
-                "n": m,
-                "new_angle": new_angle,
-            }
-
-        if set(labels).issubset({0, 1}) and len(labels) == 2:
-            new_angle, stats = _compute_with_two_labels(max_angle, values_by_label, mode="minus")
-            return new_angle >= angular_gap, {
-                "case": "two_labels_0_1_minus",
-                "labels": labels,
-                "n": m,
-                "new_angle": new_angle,
-                **stats,
-            }
-
-    return False, {"case": "prop_outside_range"}
+    return False, {}
 
 
 # ============================================================
@@ -535,7 +431,8 @@ def pipeline_adjusted(
     distances, indices = nbrs.kneighbors(data)
     distances = distances[:, 1:knn + 1]
     indices = indices[:, 1:knn + 1]
-
+    init_prop: List[float] = []
+    init_angles: List[float] = []
     adjusted_prop: List[float] = []
     adjusted_angles: List[float] = []
     rho: List[float] = []
@@ -622,62 +519,24 @@ def pipeline_adjusted(
                     angles_int.append((theta, (labels[o], labels[p])))
 
             denom = knn - 2
-            prop_i, concave_i = check_pre_concavity(angles_int, denom=denom, tol=1e-4)
-
-            ok, info = check_concavity(prop_i, prop_thresh, max_angle, concave_i, angular_gap)
+            init_prop_i, item_i = check_pre_concavity(angles_int, denom=denom, tol=1e-4)
+            adj_prop_i, new_angle = init_prop_i, max_angle #retain initial values if not ok.
+            ok, info = check_concavity(init_prop_i, prop_thresh, max_angle, item_i, angular_gap)
             if ok:
-                selected = info.get("selected_adjustments", [])
-                if len(selected) == 2:
-                    first_idx = int(selected[0]["stack_index"])
-                    second_idx = int(selected[1]["stack_index"])
-                    first_vec = vectors[first_idx]
-                    second_vec = vectors[second_idx]
-                    selected_sources = {
-                        stack_source_indices[first_idx],
-                        stack_source_indices[second_idx],
-                    }
+                adj_prop_i = info["prop_in_gap"]
+                new_angle = info.get("gap")
 
-                    if not sont_dependants(first_vec, second_vec, eps=eps):
-                        new_proj_list = []
-                        for z in range(knn):
-                            if z in selected_sources:
-                                continue
-                            try:
-                                _, proj_z = projection_gram_schmidt(
-                                    vec[z], first_vec, second_vec, eps=eps
-                                )
-                                new_proj_list.append(proj_z)
-                            except ValueError:
-                                continue
-
-                        new_vectors = np.vstack([first_vec, second_vec] + new_proj_list)
-                        new_labels = list(range(len(new_vectors)))
-                        new_angles_int: List[Tuple[float, Tuple[int, int]]] = []
-                        for o in range(len(new_vectors) - 1):
-                            no = np.linalg.norm(new_vectors[o])
-                            if no <= eps:
-                                continue
-                            for p in range(o + 1, len(new_vectors)):
-                                np_ = np.linalg.norm(new_vectors[p])
-                                if np_ <= eps:
-                                    continue
-                                dot = float(np.dot(new_vectors[o], new_vectors[p]))
-                                theta = float(
-                                    np.degrees(
-                                        np.arccos(np.clip(dot / (no * np_), -1.0, 1.0))
-                                    )
-                                )
-                                new_angles_int.append((theta, (new_labels[o], new_labels[p])))
-
-                        max_angle = float(info["new_angle"])
-                        prop_i = check_sums(new_angles_int, denom=denom)
-
-            adjusted_prop.append(prop_i)
-            adjusted_angles.append(float(max_angle))
+            
+            adjusted_prop.append(adj_prop_i)
+            adjusted_angles.append(float(new_angle))
+            init_prop.append(init_prop_i)
+            init_angles.append(float(max_angle))
             rho.append(rho_i)
 
 
         except ValueError:
+            init_prop.append(np.nan)
+            init_angles.append(np.nan)
             adjusted_prop.append(np.nan)
             adjusted_angles.append(np.nan)
             rho.append(np.nan)
@@ -697,6 +556,8 @@ def pipeline_adjusted(
        #     rel_dens[i] = densities[i] / max_neigh
 
     return {
+        "initial_prop": np.asarray(init_prop, dtype=float),
+        "initial_angles": np.asarray(init_angles, dtype=float),
         "adjusted_prop": np.asarray(adjusted_prop, dtype=float),
         "adjusted_angles": np.asarray(adjusted_angles, dtype=float),
         "indices": indices,
@@ -724,7 +585,7 @@ def pipeline_oriented(
 ):
     """
     Oriented BDE pipeline with a direction gate relative to the dataset barycenter.
-
+    direction_threshold set to 0.7 = cos(45 degrees) := cos(DIR_THRESH) (see paper)
     Returns both raw and adjusted outputs so angle/prop corrections can be audited.
     """
     data = np.asarray(data, dtype=float)
