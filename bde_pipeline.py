@@ -238,23 +238,24 @@ def check_concavity(
             alpha_1.append(val)
             j_1.append(j)    
 
-    angle_0 = max(alpha_0) if alpha_0 else 0.0
-    angle_1 = max(alpha_1) if alpha_1 else 0.0
+    beta_0 = max(alpha_0) if alpha_0 else 0.0
+    beta_1 = max(alpha_1) if alpha_1 else 0.0
 
     
 
     if prop >= prop_thresh and prop != 1.0:
-        if max_angle + angle_0 + angle_1 >= 180:
-            gap = 360 - (max_angle + angle_0 + angle_1)
+        if max_angle + beta_0 + beta_1 >= 180:
+            omega = max_angle + beta_0 + beta_1
+            gap = 360-omega
             return gap > angular_gap, {"prop_in_gap":0.0,"gap": gap}#hard-coded adj prop because in the gram-scmidt basis.
-        if max_angle + angle_0 + angle_1 < 180:
-            gap = max_angle + angle_0 + angle_1
-            return gap > angular_gap, {"prop_in_gap":1.0,"gap": gap}
+        if max_angle + beta_0 + beta_1 < 180:
+            omega = max_angle + beta_0 + beta_1
+            return True, {"prop_in_gap":1.0,"gap": omega}#because the angular gap is the complement of 
         #all gaps, ie., adjusted angles are < 180 degrees.
 
     if prop <= 1 - prop_thresh and prop != 0.0:
-        gap = max_angle - angle_0 - angle_1
-        return gap > angular_gap, {"prop_in_gap":0.0,"gap": gap}
+        omega = max_angle - beta_0 - beta_1
+        return omega > angular_gap, {"prop_in_gap":0.0,"gap": omega}
 
     return False, {}
 
