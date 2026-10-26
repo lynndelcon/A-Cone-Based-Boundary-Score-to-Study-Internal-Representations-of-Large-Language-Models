@@ -2,7 +2,7 @@
 Clean rewrite of your "proposed method" (no dist-to-boundary, just BDE),
 keeping the SAME conceptual pipeline and using the SAME helper functions
 (check_concavity, check_item_general) — but with the critical fixes:
-- pipeline_initial removes the query point itself from kNN results but keeps other
+- All pipelines remove the query point itself from kNN results but keep other
   zero-distance duplicate points as valid neighbors.
 - No global-variable leakage inside check_concavity (pass denom explicitly)
 - Exclude ONLY the dependent pair (i,j) (and symmetric) instead of x!=i and y!=j
@@ -17,7 +17,6 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Dict, List, Tuple, Optional
 
-from more_itertools import argmax
 import numpy as np
 from sklearn.neighbors import NearestNeighbors
 
@@ -85,7 +84,7 @@ def _initial_neighbor_indices_and_distances(
     """Return k neighbors per point, excluding self by index only.
 
     Other rows at distance 0 are valid duplicate points and remain eligible for
-    the downstream pipeline_initial computation.
+    all downstream pipeline computations.
     """
     n_points = data.shape[0]
     if knn >= n_points:
@@ -428,10 +427,7 @@ def pipeline_adjusted(
     data = np.asarray(data, dtype=float)
     N, d = data.shape
 
-    nbrs = NearestNeighbors(n_neighbors=knn + 1, algorithm="auto", metric="euclidean").fit(data)
-    distances, indices = nbrs.kneighbors(data)
-    distances = distances[:, 1:knn + 1]
-    indices = indices[:, 1:knn + 1]
+    distances, indices = _initial_neighbor_indices_and_distances(data, knn)
     init_prop: List[float] = []
     init_angles: List[float] = []
     adjusted_prop: List[float] = []
@@ -594,15 +590,7 @@ def pipeline_oriented(
 
     bary = np.mean(data, axis=0)
 
-    nbrs = NearestNeighbors(
-        n_neighbors=knn + 1,
-        algorithm="auto",
-        metric="euclidean",
-    ).fit(data)
-
-    distances, indices = nbrs.kneighbors(data)
-    distances = distances[:, 1:knn + 1]
-    indices = indices[:, 1:knn + 1]
+    distances, indices = _initial_neighbor_indices_and_distances(data, knn)
 
     all_angles: List[float] = []
     adjusted_angles: List[float] = []
