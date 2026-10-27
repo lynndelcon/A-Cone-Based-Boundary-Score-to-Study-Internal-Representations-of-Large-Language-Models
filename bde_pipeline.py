@@ -1,17 +1,3 @@
-"""
-Clean rewrite of your "proposed method" (no dist-to-boundary, just BDE),
-keeping the SAME conceptual pipeline and using the SAME helper functions
-(check_concavity, check_item_general) — but with the critical fixes:
-- All pipelines remove the query point itself from kNN results but keep other
-  zero-distance duplicate points as valid neighbors.
-- No global-variable leakage inside check_concavity (pass denom explicitly)
-- Exclude ONLY the dependent pair (i,j) (and symmetric) instead of x!=i and y!=j
-- Store angles consistently as (theta_deg, (i,j)) tuples
-- Avoid recomputing check_item_general 3 times
-- Robust stacking when proj is empty
-- Robust rel_dens with NaNs
-"""
-
 from __future__ import annotations
 
 from collections import defaultdict
