@@ -396,12 +396,14 @@ def pipeline_initial(
        #     rel_dens[i] = densities[i] / max_neigh
 
     return {
-        "prop": np.asarray(prop, dtype=float),
+        "bos": np.asarray(prop, dtype=float),
         "angles": np.asarray(all_max_angles, dtype=float),
         "indices": indices,
         "distances": distances,
     }
 
+#Usage: results_init = pipeline_initial(data, knn=17)
+# results_init["bos"], results_init["angles]
 
 def pipeline_adjusted(
     data: np.ndarray,
@@ -553,36 +555,29 @@ def pipeline_adjusted(
        #     rel_dens[i] = densities[i] / max_neigh
 
     return {
-        "initial_prop": np.asarray(init_prop, dtype=float),
+        "initial_bos": np.asarray(init_prop, dtype=float),
         "initial_angles": np.asarray(init_angles, dtype=float),
-        "adjusted_prop": np.asarray(adjusted_prop, dtype=float),
+        "adjusted_bos": np.asarray(adjusted_prop, dtype=float),
         "adjusted_angles": np.asarray(adjusted_angles, dtype=float),
         "indices": indices,
         "distances": distances,
     }
+#Usage:
+# results_adjusted = pipeline_adjusted(data, knn=17, prop_thresh=0.7, angular_gap=90)
+#results_adjusted["initial_bos"], results_adjusted["initial_angles"], results_adjusted["adjusted_bos"], results_adjusted["adjusted_angles"]
 
- 
-# ============================================================
-# Usage
-# ============================================================
-# data = embed
-# out = compute_bde_without_boundary(data, knn=17, thresh=90)
-# np.save("prop_without_17.npy", out["prop"])
-# np.save("angles_without_17.npy", out["angles"])
-# np.save("rel_dens_without_17.npy", out["rel_dens"])
 
 def pipeline_oriented(
     data: np.ndarray,
     knn: int = 32,
     direction_threshold: float = 0.70,
-    thresh: float = 90,
     angle_min_deg: float = 1.0,
     angle_max_deg: float = 179.9,
     eps: float = 1e-12,
 ):
     """
     Oriented BDE pipeline with a direction gate relative to the dataset barycenter.
-    direction_threshold set to 0.7 = cos(45 degrees) := cos(DIR_THRESH) (see paper)
+    direction_threshold set to 0.7 = cos(45 degrees) 
     Returns both raw and adjusted outputs so angle/prop corrections can be audited.
     """
     data = np.asarray(data, dtype=float)
@@ -703,9 +698,11 @@ def pipeline_oriented(
             rel_dens[i] = densities[i] / max_neigh
 
     return {
-        "oriented_prop": np.asarray(prop, dtype=float),
+        "oriented_bos": np.asarray(prop, dtype=float),
         "oriented_angles": np.asarray(all_angles, dtype=float),
         "indices": indices,
         "distances": distances,
     }
 
+#Usage: results_oriented = pipeline_oriented(data, knn=17, direction_threshold=0.7)
+#results_oriented["oriented_bos"], results_oriented["oriented_angles"]
