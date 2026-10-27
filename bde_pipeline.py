@@ -103,15 +103,6 @@ def _initial_neighbor_indices_and_distances(
 # ============================================================
 
 def check_sums(data, denom):
-    """
-    data : liste de tuples (valeur_float, (i, j))
-    will add the angles (0l + 1l) to see if it is contained in max_angle_01,
-    data is a list of the stack vectors that contains already the Gram-Schmidt basis vector (0,1) 
-
-    Retourne un dictionnaire {j: somme} pour chaque j ≠ 1
-    où les paires (0,j) et (1,j) existent.
-    La somme est : values[(0,j)] + values[(1,j)]
-    """
     ref = next(val for val, (a, b) in data if (a, b) == (0, 1)) + 0.0001
 
     # Construire le dictionnaire {(i,j): valeur} en forçant int/float
@@ -205,7 +196,7 @@ def check_concavity(
     """
     item: list of (value, label, stack_index)
     #adjusted angle and adjusted_prop computed in the gram-schmidt basis.
-    #Spliting the list by vector label (0 ro 1).
+    #Spliting the list by vector label (0 or 1).
     """
     Index_0 = None
     Index_1 = None
@@ -255,18 +246,7 @@ def pipeline_initial(
     angle_max_deg: float = 179.9,
     eps: float = 1e-12,
 ):
-    """
-    Proposed method:
-      - adjusted for concavity.
-      - For each point, take kNN displacement vectors `vec`
-      - Find maximal pairwise angle among vec (excluding one dependent pair)
-      - Project remaining vec onto span(vec[m], vec[n])
-      - Compute angles among [vec[m], vec[n], projections]
-      - Compute prop via check_concavity, then possibly adjust with check_item_general
-      - Compute rho and relative density
 
-    Returns dict with arrays and kNN indices/distances.
-    """
     data = np.asarray(data, dtype=float)
     N, d = data.shape
 
@@ -400,18 +380,7 @@ def pipeline_adjusted(
     angular_gap: float = 90,
     eps: float = 1e-12,
 ):
-    """
-    Proposed method:
-      - adjusted for concavity.
-      - For each point, take kNN displacement vectors `vec`
-      - Find maximal pairwise angle among vec (excluding one dependent pair)
-      - Project remaining vec onto span(vec[m], vec[n])
-      - Compute angles among [vec[m], vec[n], projections]
-      - Compute prop via check_concavity, then possibly adjust with check_item_general
-      - Compute rho and relative density
 
-    Returns dict with arrays and kNN indices/distances.
-    """
     data = np.asarray(data, dtype=float)
     N, d = data.shape
 
@@ -561,11 +530,7 @@ def pipeline_oriented(
     angle_max_deg: float = 179.9,
     eps: float = 1e-12,
 ):
-    """
-    Oriented BDE pipeline with a direction gate relative to the dataset barycenter.
-    direction_threshold set to 0.7 = cos(45 degrees) 
-    Returns both raw and adjusted outputs so angle/prop corrections can be audited.
-    """
+
     data = np.asarray(data, dtype=float)
     N, d = data.shape
 
