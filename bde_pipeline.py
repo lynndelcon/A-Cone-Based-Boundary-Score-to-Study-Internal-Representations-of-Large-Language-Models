@@ -223,7 +223,7 @@ def check_concavity(
         if max_angle + beta_0 + beta_1 >= 180:
             omega = max_angle + beta_0 + beta_1
             gap = 360-omega
-            return gap > angular_gap, {"prop_in_gap":0.0,"gap": gap}#hard-coded adj prop because in the gram-scmidt basis.
+            return gap >= angular_gap, {"prop_in_gap":0.0,"gap": gap}#hard-coded adj prop because in the gram-scmidt basis.
         if max_angle + beta_0 + beta_1 < 180:
             omega = max_angle + beta_0 + beta_1
             return True, {"prop_in_gap":1.0,"gap": omega}#because the angular gap is the complement of 
@@ -231,7 +231,7 @@ def check_concavity(
 
     if prop <= 1 - prop_thresh and prop != 0.0:
         omega = max_angle - beta_0 - beta_1
-        return omega > angular_gap, {"prop_in_gap":0.0,"gap": omega}
+        return omega >= angular_gap, {"prop_in_gap":0.0,"gap": omega}
 
     return False, {}
 
