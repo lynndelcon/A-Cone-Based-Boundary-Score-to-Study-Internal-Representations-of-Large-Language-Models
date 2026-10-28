@@ -585,7 +585,7 @@ def pipeline_oriented(
                         continue
 
                     direction = float(np.dot(normal / normal_norm, xb_norm))
-                    if direction < direction_threshold:
+                    if direction <= direction_threshold:
                         continue
 
                     dot_xy = float(np.clip(np.dot(x_norm, y_norm), -1.0, 1.0))
