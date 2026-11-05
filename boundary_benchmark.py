@@ -9,7 +9,6 @@ initial and adjusted results. The benchmark evaluates initial and adjusted BoS
 as TWO SCORE OUTPUTS of the same method, never as two separately run methods.
 
 Implement the support boundary evaluation as well as the local-sector one and the distance to the boundary (depth).
-
 """
 from __future__ import annotations
 import argparse, importlib, json, math, traceback
