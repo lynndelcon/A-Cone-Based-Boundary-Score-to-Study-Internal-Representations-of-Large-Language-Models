@@ -1,3 +1,17 @@
+"""
+Clean rewrite of your "proposed method" (no dist-to-boundary, just BDE),
+keeping the SAME conceptual pipeline and using the SAME helper functions
+(check_concavity, check_item_general) — but with the critical fixes:
+- All pipelines remove the query point itself from kNN results but keep other
+  zero-distance duplicate points as valid neighbors.
+- No global-variable leakage inside check_concavity (pass denom explicitly)
+- Exclude ONLY the dependent pair (i,j) (and symmetric) instead of x!=i and y!=j
+- Store angles consistently as (theta_deg, (i,j)) tuples
+- Avoid recomputing check_item_general 3 times
+- Robust stacking when proj is empty
+- Robust rel_dens with NaNs
+"""
+
 from __future__ import annotations
 
 from collections import defaultdict
@@ -103,6 +117,15 @@ def _initial_neighbor_indices_and_distances(
 # ============================================================
 
 def check_sums(data, denom):
+    """
+    data : liste de tuples (valeur_float, (i, j))
+    will add the angles (0l + 1l) to see if it is contained in max_angle_01,
+    data is a list of the stack vectors that contains already the Gram-Schmidt basis vector (0,1) 
+
+    Retourne un dictionnaire {j: somme} pour chaque j ≠ 1
+    où les paires (0,j) et (1,j) existent.
+    La somme est : values[(0,j)] + values[(1,j)]
+    """
     ref = next(val for val, (a, b) in data if (a, b) == (0, 1)) + 0.0001
 
     # Construire le dictionnaire {(i,j): valeur} en forçant int/float
@@ -196,7 +219,7 @@ def check_concavity(
     """
     item: list of (value, label, stack_index)
     #adjusted angle and adjusted_prop computed in the gram-schmidt basis.
-    #Spliting the list by vector label (0 or 1).
+    #Spliting the list by vector label (0 ro 1).
     """
     Index_0 = None
     Index_1 = None
@@ -246,7 +269,18 @@ def pipeline_initial(
     angle_max_deg: float = 179.9,
     eps: float = 1e-12,
 ):
+    """
+    Proposed method:
+      - adjusted for concavity.
+      - For each point, take kNN displacement vectors `vec`
+      - Find maximal pairwise angle among vec (excluding one dependent pair)
+      - Project remaining vec onto span(vec[m], vec[n])
+      - Compute angles among [vec[m], vec[n], projections]
+      - Compute prop via check_concavity, then possibly adjust with check_item_general
+      - Compute rho and relative density
 
+    Returns dict with arrays and kNN indices/distances.
+    """
     data = np.asarray(data, dtype=float)
     N, d = data.shape
 
@@ -362,14 +396,12 @@ def pipeline_initial(
        #     rel_dens[i] = densities[i] / max_neigh
 
     return {
-        "bos": np.asarray(prop, dtype=float),
+        "prop": np.asarray(prop, dtype=float),
         "angles": np.asarray(all_max_angles, dtype=float),
         "indices": indices,
         "distances": distances,
     }
 
-#Usage: results_init = pipeline_initial(data, knn=17)
-# results_init["bos"], results_init["angles]
 
 def pipeline_adjusted(
     data: np.ndarray,
@@ -377,10 +409,21 @@ def pipeline_adjusted(
     angle_min_deg: float = 1.0,
     angle_max_deg: float = 179.9,
     prop_thresh: float = 0.7,
-    angular_gap: float = 90,
+    angular_gap: float = 30,
     eps: float = 1e-12,
 ):
+    """
+    Proposed method:
+      - adjusted for concavity.
+      - For each point, take kNN displacement vectors `vec`
+      - Find maximal pairwise angle among vec (excluding one dependent pair)
+      - Project remaining vec onto span(vec[m], vec[n])
+      - Compute angles among [vec[m], vec[n], projections]
+      - Compute prop via check_concavity, then possibly adjust with check_item_general
+      - Compute rho and relative density
 
+    Returns dict with arrays and kNN indices/distances.
+    """
     data = np.asarray(data, dtype=float)
     N, d = data.shape
 
@@ -473,7 +516,9 @@ def pipeline_adjusted(
                     angles_int.append((theta, (labels[o], labels[p])))
 
             denom = knn - 2
-            init_prop_i, item_i = check_pre_concavity(angles_int, denom=denom, tol=1e-4)
+            init_prop_i, item_i = check_pre_concavity(
+                angles_int, denom=denom, tol=1e-4, prop_thresh=prop_thresh
+            )
             adj_prop_i, new_angle = init_prop_i, max_angle #retain initial values if not ok.
             ok, info = check_concavity(init_prop_i, prop_thresh, max_angle, item_i, angular_gap)
             if ok:
@@ -510,17 +555,23 @@ def pipeline_adjusted(
        #     rel_dens[i] = densities[i] / max_neigh
 
     return {
-        "initial_bos": np.asarray(init_prop, dtype=float),
+        "initial_prop": np.asarray(init_prop, dtype=float),
         "initial_angles": np.asarray(init_angles, dtype=float),
-        "adjusted_bos": np.asarray(adjusted_prop, dtype=float),
+        "adjusted_prop": np.asarray(adjusted_prop, dtype=float),
         "adjusted_angles": np.asarray(adjusted_angles, dtype=float),
         "indices": indices,
         "distances": distances,
     }
-#Usage:
-# results_adjusted = pipeline_adjusted(data, knn=17, prop_thresh=0.7, angular_gap=90)
-#results_adjusted["initial_bos"], results_adjusted["initial_angles"], results_adjusted["adjusted_bos"], results_adjusted["adjusted_angles"]
 
+ 
+# ============================================================
+# Usage
+# ============================================================
+# data = embed
+# out = compute_bde_without_boundary(data, knn=17, thresh=90)
+# np.save("prop_without_17.npy", out["prop"])
+# np.save("angles_without_17.npy", out["angles"])
+# np.save("rel_dens_without_17.npy", out["rel_dens"])
 
 def pipeline_oriented(
     data: np.ndarray,
@@ -530,7 +581,13 @@ def pipeline_oriented(
     angle_max_deg: float = 179.9,
     eps: float = 1e-12,
 ):
-
+    """
+    Oriented BDE pipeline with a direction gate relative to the dataset barycenter.
+    Keep pairs whose normalized angle bisector has cosine greater than
+    direction_threshold with the vector toward the barycenter. The default
+    0.70 allows direction angles below approximately 45.57 degrees.
+    Returns oriented proportions, opening angles, and neighbor information.
+    """
     data = np.asarray(data, dtype=float)
     N, d = data.shape
 
@@ -542,6 +599,7 @@ def pipeline_oriented(
     adjusted_angles: List[float] = []
     rho: List[float] = []
     prop: List[float] = []
+    dist_est: List[float] = []
     raw_prop: List[float] = []
 
     for idx in range(N):
@@ -583,9 +641,9 @@ def pipeline_oriented(
                     normal_norm = np.linalg.norm(normal)
                     if normal_norm <= eps:
                         continue
-
+                    # Alignment of the pair's angle bisector toward the barycenter.
                     direction = float(np.dot(normal / normal_norm, xb_norm))
-                    if direction < direction_threshold:
+                    if direction <= direction_threshold:
                         continue
 
                     dot_xy = float(np.clip(np.dot(x_norm, y_norm), -1.0, 1.0))
@@ -630,9 +688,10 @@ def pipeline_oriented(
 
             denom = knn - 2
             prop_i = check_sums(angles_int, denom=denom)
-
+            dist_est_i = 1-2*abs(prop_i-0.5)#mapping prop oriented to a distance-like measure normalized in [0,1]
             rho.append(rho_i)
             prop.append(prop_i)
+            dist_est.append(dist_est_i)
 
         except ValueError:
             all_angles.append(np.nan)
@@ -649,11 +708,10 @@ def pipeline_oriented(
             rel_dens[i] = densities[i] / max_neigh
 
     return {
-        "oriented_bos": np.asarray(prop, dtype=float),
+        "oriented_prop": np.asarray(prop, dtype=float),
         "oriented_angles": np.asarray(all_angles, dtype=float),
+        "distance_estimates": np.asarray(dist_est, dtype=float),
         "indices": indices,
         "distances": distances,
     }
 
-#Usage: results_oriented = pipeline_oriented(data, knn=17, direction_threshold=0.7)
-#results_oriented["oriented_bos"], results_oriented["oriented_angles"]
