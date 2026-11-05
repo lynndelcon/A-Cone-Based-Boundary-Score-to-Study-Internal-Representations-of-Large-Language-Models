@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reproducible boundary-detection benchmark. See boundary_benchmark_README.md.
+"""Reproducible boundary-detection benchmark. 
 
 Requires: numpy scipy pandas scikit-learn jinja2. External methods are provided by the user
 via --adapter MODULE; no purported Hickok/BEPS implementations are fabricated.
@@ -7,6 +7,8 @@ via --adapter MODULE; no purported Hickok/BEPS implementations are fabricated.
 BEPS is ONE algorithm call (adapter function adjusted_angle), returning both its
 initial and adjusted results. The benchmark evaluates initial and adjusted BoS
 as TWO SCORE OUTPUTS of the same method, never as two separately run methods.
+
+Implement the support boundary evaluation as well as the local-sector one and the distance to the boundary (depth).
 
 """
 from __future__ import annotations
